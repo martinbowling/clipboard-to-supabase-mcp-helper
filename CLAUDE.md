@@ -22,7 +22,7 @@ The project consists of several key components:
 
 ## Core Dependencies
 
-- clipboard-event: Native clipboard events
+- clipboard-event: Native clipboard events (pinned to ^1.6.0 as v2.x doesn't exist)
 - clipboardy: Cross-platform clipboard reading/writing
 - pngpaste: macOS CLI for saving clipboard images
 - img-clipboard: Windows/Linux equivalent for clipboard images
@@ -79,3 +79,18 @@ Log files are located at:
 - macOS: ~/Library/Logs/cliphelper.log
 - Linux: ~/.config/cliphelper/logs
 - Windows: Logs subdirectory in the application directory
+
+## Known Issues and Alternatives
+
+### clipboard-event Package
+
+The clipboard-event package (v1.6.0) is used for clipboard monitoring but has limitations:
+- It's not actively maintained (last publish was 2 years ago)
+- May have edge-case bugs on macOS/Ubuntu requiring manual chmod and race-condition fixes
+- No TypeScript types and relies on child-process spawning
+
+Potential alternatives for future versions:
+- electron-clipboard-watcher: Maintained with better image and text support
+- clipboardy with polling: More reliable but requires timer-based polling
+
+For production or high-volume clipboard operations, consider switching to one of these alternatives.
