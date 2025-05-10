@@ -21,7 +21,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/typescript-sdk": "latest",
+    "@modelcontextprotocol/sdk": "^1.11.1",
     "@supabase/supabase-js": "^2.39.3",
     "clipboard-event": "^2.3.0",
     "clipboardy": "^4.0.0",

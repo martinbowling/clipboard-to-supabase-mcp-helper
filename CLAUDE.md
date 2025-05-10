@@ -17,7 +17,7 @@ The project consists of several key components:
 - Clipboard Watcher: Uses clipboard-event + clipboardy for cross-platform event listening
 - Image Handling: Uses pngpaste (macOS) or img-clipboard/imgpaste (Windows/Linux)
 - Storage: @supabase/supabase-js for image upload and URL management
-- MCP Layer: @modelcontextprotocol/typescript-sdk server for exposing functionality
+- MCP Layer: @modelcontextprotocol/sdk for exposing functionality
 - Auto-start mechanisms: systemd user services, LaunchAgent, auto-launch
 
 ## Core Dependencies
@@ -27,7 +27,7 @@ The project consists of several key components:
 - pngpaste: macOS CLI for saving clipboard images
 - img-clipboard: Windows/Linux equivalent for clipboard images
 - @supabase/supabase-js: Supabase client for storage operations
-- @modelcontextprotocol/typescript-sdk: MCP server implementation
+- @modelcontextprotocol/sdk: MCP server implementation
 - uuid: For generating unique filenames
 - lodash.debounce: For handling rapid clipboard events
 
@@ -59,6 +59,7 @@ The project requires the following environment variables:
 SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=...
 BUCKET=media
+MCP_PORT=3333
 ```
 
 ## Platform-Specific Notes
@@ -66,3 +67,15 @@ BUCKET=media
 - On macOS, relies on the pngpaste CLI utility
 - On Windows/Linux, uses img-clipboard or imgpaste packages
 - Auto-start configuration differs by platform (LaunchAgent, systemd user service, registry)
+
+## Logging
+
+The application uses a custom logger with:
+- Rotating log files
+- Multiple log levels (DEBUG, INFO, WARN, ERROR)
+- Platform-specific log file locations
+
+Log files are located at:
+- macOS: ~/Library/Logs/cliphelper.log
+- Linux: ~/.config/cliphelper/logs
+- Windows: Logs subdirectory in the application directory

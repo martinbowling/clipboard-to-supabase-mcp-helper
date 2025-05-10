@@ -16,7 +16,7 @@ A local agent that monitors the system clipboard, uploads any copied image to Su
 - Supabase account with Storage enabled
 - Platform-specific dependencies:
   - macOS: `pngpaste` (`brew install pngpaste`)
-  - Windows/Linux: `img-clipboard` will be used when implemented
+  - Windows/Linux: `img-clipboard` (will be installed via npm)
 
 ## Installation
 
@@ -90,6 +90,20 @@ Response:
   "content": "https://your-project.supabase.co/storage/v1/object/public/media/clips/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.png"
 }
 ```
+
+## Platform-Specific Notes
+
+### macOS
+- Requires `pngpaste`: Install with `brew install pngpaste`
+- Uses LaunchAgents for auto-start
+
+### Windows
+- Uses Windows Registry for auto-start
+- Requires Node.js to be in PATH
+
+### Linux
+- Uses systemd for auto-start
+- May require xclip or wl-clipboard depending on your display server
 
 ## Supabase Configuration
 

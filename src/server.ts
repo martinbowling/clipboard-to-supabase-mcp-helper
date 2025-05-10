@@ -1,4 +1,4 @@
-import { MCPServer } from '@modelcontextprotocol/typescript-sdk';
+import { MCPServer } from '@modelcontextprotocol/sdk';
 import { config } from 'dotenv';
 import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js';
 import logger from './utils/logger.js';
