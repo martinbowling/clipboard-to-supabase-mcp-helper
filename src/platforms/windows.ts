@@ -1,28 +1,36 @@
 import fs from 'fs/promises';
-import { getImageFromClipboard as getImgClipboard } from 'img-clipboard';
+import { execSync } from 'child_process';
+import path from 'path';
+import { tmpdir } from 'os';
 
 /**
- * Windows clipboard image capture using img-clipboard
+ * Windows clipboard image capture
  * 
  * @param filePath - Path to save the clipboard image
  * @returns Promise<boolean> - true if image was captured, false otherwise
  */
 export async function getImageFromClipboard(filePath: string): Promise<boolean> {
   try {
-    // Get image from clipboard directly using img-clipboard
-    const imgData = getImgClipboard();
-    
-    if (!imgData || imgData.length === 0) {
-      return false; // No image in clipboard
+    // For Windows, PowerShell can capture clipboard images
+    const psScript = `
+    Add-Type -AssemblyName System.Windows.Forms
+    if ([Windows.Forms.Clipboard]::ContainsImage()) {
+      $img = [Windows.Forms.Clipboard]::GetImage()
+      $img.Save("${filePath.replace(/\\/g, '\\\\')}")
+      exit 0
+    } else {
+      exit 1
     }
+    `;
     
-    // Write the image data to the file
-    await fs.writeFile(filePath, imgData);
+    // Execute PowerShell script
+    execSync(`powershell -Command "${psScript}"`);
     
     // Verify the file exists and has content
     const stats = await fs.stat(filePath);
     return stats.size > 0;
   } catch (error) {
+    // Either PowerShell failed or there's no image in clipboard
     console.error('Windows clipboard capture error:', error);
     return false;
   }
