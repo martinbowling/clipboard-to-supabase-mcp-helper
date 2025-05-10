@@ -2,6 +2,7 @@ import clipboardy from 'clipboardy';
 import { createClient } from '@supabase/supabase-js';
 import { tmpdir } from 'os';
 import fs from 'fs/promises';
+import { statSync } from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { config } from 'dotenv';
@@ -9,6 +10,11 @@ import { createHash } from 'crypto';
 import { getImageFromClipboard, isPlatformSupported, getPlatformName } from './platforms/index.js';
 import logger from './utils/logger.js';
 import { AppError, asyncHandler } from './utils/error-handler.js';
+import { safeRemove } from './utils/fs.js';
+
+// Node versions older than 18 need fetch polyfill
+// Uncomment this line if you're using Node 16/17
+// import "undici/polyfill";
 
 // Load environment variables
 config();
@@ -23,6 +29,7 @@ const supabase = createClient(
 const TMP = tmpdir();
 const BUCKET = process.env.BUCKET || 'media';
 const POLL_INTERVAL_MS = 300; // 300ms polling interval
+const MAX_IMAGE_SIZE = 8 * 1024 * 1024; // 8MB maximum image size
 
 // Store the hash of the last processed image to avoid duplicates
 let lastImageHash = '';
@@ -33,6 +40,35 @@ let clipboardWatcherInterval: NodeJS.Timeout | null = null;
  */
 function getImageHash(data: Buffer): string {
   return createHash('sha1').update(data).digest('hex');
+}
+
+/**
+ * Uploads a file to Supabase and returns its public URL
+ */
+async function uploadFileToSupabase(buffer: Buffer, filePath: string): Promise<string> {
+  // Reject absurdly large clips early (saves token+bandwidth)
+  if (buffer.byteLength > MAX_IMAGE_SIZE) {
+    throw new AppError(`Image too large (${Math.round(buffer.byteLength / 1024 / 1024)}MB > 8MB)`, 'IMAGE_TOO_LARGE');
+  }
+
+  // Convert Buffer to ArrayBuffer to avoid Undici EPIPE issues
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(filePath, new Uint8Array(buffer).buffer, {
+      contentType: 'image/png',
+      upsert: true
+    });
+
+  if (error) {
+    throw new AppError(`Supabase upload failed: ${error.message}`, 'UPLOAD_ERROR');
+  }
+
+  // Get public URL
+  const { data: urlData } = supabase.storage
+    .from(BUCKET)
+    .getPublicUrl(filePath);
+
+  return urlData.publicUrl;
 }
 
 /**
@@ -57,6 +93,18 @@ const handleImage = asyncHandler(async (): Promise<void> => {
       return; // Not an image, exit early
     }
     
+    // Verify the file exists and has content
+    try {
+      const stats = statSync(filename);
+      if (stats.size === 0) {
+        logger.debug('Empty image file detected, skipping');
+        return;
+      }
+    } catch (err) {
+      logger.debug('Image file not found or inaccessible');
+      return;
+    }
+    
     // Read image file
     const data = await fs.readFile(filename);
     
@@ -77,24 +125,12 @@ const handleImage = asyncHandler(async (): Promise<void> => {
     // Create unique path for Supabase
     const filePath = `clips/${path.basename(filename)}`;
     
-    // Upload to Supabase
-    logger.debug(`Uploading to Supabase bucket: ${BUCKET}, path: ${filePath}`);
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(filePath, data, { upsert: false });
-    
-    if (error) {
-      throw new AppError(`Supabase upload failed: ${error.message}`, 'UPLOAD_ERROR');
-    }
-    
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(BUCKET)
-      .getPublicUrl(filePath);
+    // Upload to Supabase and get URL
+    const publicUrl = await uploadFileToSupabase(data, filePath);
     
     // Write URL back to clipboard
-    await clipboardy.write(urlData.publicUrl);
-    logger.info(`Successfully uploaded ${filePath} → ${urlData.publicUrl}`);
+    await clipboardy.write(publicUrl);
+    logger.info(`Successfully uploaded ${filePath} → ${publicUrl}`);
   } catch (error) {
     if (error instanceof AppError) {
       throw error; // Re-throw AppErrors to be caught by asyncHandler
@@ -104,10 +140,8 @@ const handleImage = asyncHandler(async (): Promise<void> => {
       'CLIPBOARD_PROCESSING_ERROR'
     );
   } finally {
-    // Clean up temp file
-    fs.rm(filename).catch((err) => {
-      logger.warn(`Failed to remove temp file ${filename}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    });
+    // Safely clean up temp file
+    await safeRemove(filename);
   }
 });
 
@@ -157,6 +191,18 @@ export const uploadCurrentClipboardImage = asyncHandler(async (): Promise<string
       return 'No image in clipboard';
     }
     
+    // Verify the file exists and has content
+    try {
+      const stats = statSync(filename);
+      if (stats.size === 0) {
+        logger.debug('Empty image file detected');
+        return 'No valid image in clipboard';
+      }
+    } catch (err) {
+      logger.debug('Image file not found or inaccessible');
+      return 'Failed to capture clipboard image';
+    }
+    
     logger.info('MCP request: Image found in clipboard, preparing to upload');
     
     // Read image file
@@ -165,34 +211,20 @@ export const uploadCurrentClipboardImage = asyncHandler(async (): Promise<string
     // Create unique path for Supabase
     const filePath = `clips/${path.basename(filename)}`;
     
-    // Upload to Supabase
-    logger.debug(`MCP request: Uploading to Supabase bucket: ${BUCKET}, path: ${filePath}`);
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(filePath, data, { upsert: false });
+    // Upload to Supabase and get URL
+    const publicUrl = await uploadFileToSupabase(data, filePath);
     
-    if (error) {
-      throw new AppError(`Supabase upload failed: ${error.message}`, 'UPLOAD_ERROR');
-    }
-    
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(BUCKET)
-      .getPublicUrl(filePath);
-    
-    logger.info(`MCP request: Successfully uploaded ${filePath} → ${urlData.publicUrl}`);
+    logger.info(`MCP request: Successfully uploaded ${filePath} → ${publicUrl}`);
     
     // Return URL (don't write to clipboard in this case)
-    return urlData.publicUrl;
+    return publicUrl;
   } catch (error) {
     const errorMessage = `Error uploading clipboard image: ${error instanceof Error ? error.message : 'Unknown error'}`;
     logger.error(errorMessage);
     
     return `Error: ${error instanceof AppError ? error.message : 'Upload failed'}`;
   } finally {
-    // Clean up temp file
-    fs.rm(filename).catch((err) => {
-      logger.warn(`Failed to remove temp file ${filename}: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    });
+    // Safely clean up temp file
+    await safeRemove(filename);
   }
 });
