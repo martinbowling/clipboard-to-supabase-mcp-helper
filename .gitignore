@@ -1,0 +1,29 @@
+# Dependency directories
+node_modules/
+
+# Built output
+dist/
+
+# Environment variables
+.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+**/.claude/settings.local.json
