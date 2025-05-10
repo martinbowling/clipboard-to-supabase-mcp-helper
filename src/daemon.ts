@@ -12,29 +12,36 @@ import logger from './utils/logger.js';
 import { AppError, asyncHandler } from './utils/error-handler.js';
 import { safeRemove } from './utils/fs.js';
 
+// Load environment variables first
+config();
+
 // Polyfill fetch for Node.js versions < 18
-// Dynamically import to avoid issues in newer Node versions
 if (!globalThis.fetch) {
   try {
     logger.info('Node.js version < 18 detected, applying fetch polyfill');
-    import('undici').then(undici => {
-      globalThis.fetch = undici.fetch;
-      logger.info('Fetch polyfill applied successfully');
-    }).catch(err => {
-      logger.error(`Failed to load undici polyfill: ${err.message}`);
-    });
+    // Import synchronously to ensure fetch is available
+    const undici = require('undici');
+    globalThis.fetch = undici.fetch;
+    globalThis.Request = undici.Request;
+    globalThis.Response = undici.Response;
+    globalThis.Headers = undici.Headers;
+    logger.info('Fetch polyfill applied successfully');
   } catch (err) {
-    logger.error(`Error checking fetch availability: ${err instanceof Error ? err.message : String(err)}`);
+    logger.error(`Failed to load undici polyfill: ${err instanceof Error ? err.message : String(err)}`);
+    throw new Error('Failed to initialize fetch polyfill. Please use Node.js 18+ or ensure undici is installed.');
   }
 }
-
-// Load environment variables
-config();
 
 // Create Supabase client
 const supabase = createClient(
   process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+  process.env.SUPABASE_SERVICE_ROLE_KEY || '',
+  {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    }
+  }
 );
 
 // Constants
@@ -56,7 +63,7 @@ function getImageHash(data: Buffer): string {
 
 /**
  * Uploads a file to Supabase and returns its public URL
- * Uses ArrayBuffer conversion to avoid Undici EPIPE issues with large files
+ * Uses multiple approaches to handle the upload, with fallbacks
  */
 async function uploadFileToSupabase(buffer: Buffer, filePath: string): Promise<string> {
   // Reject large images early
@@ -64,30 +71,85 @@ async function uploadFileToSupabase(buffer: Buffer, filePath: string): Promise<s
     throw new AppError(`Image too large (${Math.round(buffer.byteLength / 1024 / 1024)}MB > 8MB)`, 'IMAGE_TOO_LARGE');
   }
 
-  // Important: Convert Buffer to ArrayBuffer using buffer.buffer
-  // This prevents Undici EPIPE errors with large payloads
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(filePath, buffer.buffer, {
-      contentType: 'image/png',
-      upsert: true
-    });
-
-  if (error) {
-    // Add more context for debugging
-    const errorDetails = error.message ? 
-      `${error.message} (Code: ${error.code || 'unknown'})` : 
-      'Unknown Supabase error';
+  logger.debug(`Starting Supabase upload for ${filePath} (${buffer.byteLength} bytes)`);
+  
+  // Try different methods of uploading
+  try {
+    // First try: Use buffer directly
+    logger.debug('Attempting upload with Buffer directly');
+    const { error: error1 } = await supabase.storage
+      .from(BUCKET)
+      .upload(filePath, buffer, {
+        contentType: 'image/png',
+        upsert: true
+      });
     
-    throw new AppError(`Supabase upload failed: ${errorDetails}`, 'UPLOAD_ERROR');
+    if (!error1) {
+      logger.debug('Upload succeeded with direct Buffer');
+      const { data: urlData } = supabase.storage
+        .from(BUCKET)
+        .getPublicUrl(filePath);
+      return urlData.publicUrl;
+    }
+    
+    logger.debug(`First upload attempt failed: ${error1.message || 'Unknown error'}`);
+    
+    // Second try: Use buffer.buffer (ArrayBuffer)
+    logger.debug('Attempting upload with buffer.buffer (ArrayBuffer)');
+    const { error: error2 } = await supabase.storage
+      .from(BUCKET)
+      .upload(filePath, buffer.buffer, {
+        contentType: 'image/png',
+        upsert: true
+      });
+    
+    if (!error2) {
+      logger.debug('Upload succeeded with buffer.buffer');
+      const { data: urlData } = supabase.storage
+        .from(BUCKET)
+        .getPublicUrl(filePath);
+      return urlData.publicUrl;
+    }
+    
+    logger.debug(`Second upload attempt failed: ${error2.message || 'Unknown error'}`);
+    
+    // Third try: Use Uint8Array
+    logger.debug('Attempting upload with Uint8Array conversion');
+    const uint8Array = new Uint8Array(buffer);
+    const { error: error3 } = await supabase.storage
+      .from(BUCKET)
+      .upload(filePath, uint8Array, {
+        contentType: 'image/png',
+        upsert: true
+      });
+    
+    if (!error3) {
+      logger.debug('Upload succeeded with Uint8Array');
+      const { data: urlData } = supabase.storage
+        .from(BUCKET)
+        .getPublicUrl(filePath);
+      return urlData.publicUrl;
+    }
+    
+    logger.debug(`Third upload attempt failed: ${error3.message || 'Unknown error'}`);
+    
+    // All attempts failed, throw detailed error
+    throw new AppError(
+      `Supabase upload failed after 3 attempts. Last error: ${error3.message || 'Unknown error'} (Code: ${error3.code || 'unknown'})`,
+      'UPLOAD_ERROR'
+    );
+  } catch (err) {
+    if (err instanceof AppError) {
+      throw err;
+    }
+    
+    // Catch and log any other errors with as much detail as possible
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    logger.error(`Unexpected error during upload: ${errorMsg}`);
+    logger.error(`Error details: ${JSON.stringify(err)}`);
+    
+    throw new AppError(`Supabase upload failed: ${errorMsg}`, 'UPLOAD_ERROR');
   }
-
-  // Get public URL (or use signedURL if needed)
-  const { data: urlData } = supabase.storage
-    .from(BUCKET)
-    .getPublicUrl(filePath);
-
-  return urlData.publicUrl;
 }
 
 /**
@@ -191,6 +253,9 @@ export function startClipboardListener(): void {
     })
     .catch(error => {
       logger.error(`Failed to connect to Supabase bucket: ${error.message}. This may indicate a paused project, invalid credentials, or network issues.`);
+      if (process.env.DEBUG) {
+        logger.error(`Full error details: ${JSON.stringify(error)}`);
+      }
     });
   
   // Start polling clipboard with interval
