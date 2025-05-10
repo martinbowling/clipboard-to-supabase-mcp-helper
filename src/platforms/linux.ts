@@ -1,11 +1,10 @@
 import fs from 'fs/promises';
 import { execSync } from 'child_process';
-import path from 'path';
-import { tmpdir } from 'os';
+import { getImageFromClipboard as getImgClipboard } from 'img-clipboard';
 
 /**
  * Linux clipboard image capture
- * Note: This tries multiple methods to get the image (xclip, wl-clipboard)
+ * Uses multiple methods: xclip, wl-clipboard, or img-clipboard
  * 
  * @param filePath - Path to save the clipboard image
  * @returns Promise<boolean> - true if image was captured, false otherwise
@@ -17,7 +16,12 @@ export async function getImageFromClipboard(filePath: string): Promise<boolean> 
     // Try with xclip first (X11)
     try {
       execSync(`xclip -selection clipboard -t image/png -o > "${filePath}"`);
-      succeeded = true;
+      
+      // Verify the file exists and has content
+      const stats = await fs.stat(filePath);
+      if (stats.size > 0) {
+        succeeded = true;
+      }
     } catch (error) {
       // xclip failed or not installed
     }
@@ -26,64 +30,33 @@ export async function getImageFromClipboard(filePath: string): Promise<boolean> 
     if (!succeeded) {
       try {
         execSync(`wl-paste -t image/png > "${filePath}"`);
-        succeeded = true;
+        
+        // Verify the file exists and has content
+        const stats = await fs.stat(filePath);
+        if (stats.size > 0) {
+          succeeded = true;
+        }
       } catch (error) {
         // wl-paste failed or not installed
       }
     }
     
-    // If direct methods failed, try using a Node.js library via a helper script
+    // If native tools failed, try using img-clipboard
     if (!succeeded) {
-      const scriptPath = path.join(tmpdir(), 'get-clipboard-image.js');
+      // Get image directly from img-clipboard
+      const imgData = getImgClipboard();
       
-      // Check if we need to create the script
-      try {
-        await fs.access(scriptPath);
-      } catch {
-        // Script doesn't exist, create it
-        const scriptContent = `
-const { getImageFromClipboard } = require('img-clipboard');
-const fs = require('fs');
-
-// Get output file path from command line
-const outputPath = process.argv[2];
-if (!outputPath) {
-  console.error('Output path is required');
-  process.exit(1);
-}
-
-try {
-  // Get image from clipboard
-  const imgData = getImageFromClipboard();
-  
-  if (imgData && imgData.length > 0) {
-    // Write to file
-    fs.writeFileSync(outputPath, imgData);
-    process.exit(0);
-  } else {
-    // No image data
-    process.exit(1);
-  }
-} catch (error) {
-  console.error('Error capturing clipboard image:', error);
-  process.exit(1);
-}
-`;
-        await fs.writeFile(scriptPath, scriptContent);
+      if (imgData && imgData.length > 0) {
+        // Write the image data to the file
+        await fs.writeFile(filePath, imgData);
+        
+        // Verify the file exists and has content
+        const stats = await fs.stat(filePath);
+        succeeded = stats.size > 0;
       }
-      
-      // Execute the script
-      execSync(`node "${scriptPath}" "${filePath}"`);
-      succeeded = true;
     }
     
-    // Verify the file exists and has content
-    if (succeeded) {
-      const stats = await fs.stat(filePath);
-      return stats.size > 0;
-    }
-    
-    return false;
+    return succeeded;
   } catch (error) {
     // All methods failed
     console.error('Linux clipboard capture error:', error);

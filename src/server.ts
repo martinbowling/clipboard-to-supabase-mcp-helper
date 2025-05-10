@@ -1,10 +1,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/http.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { config } from 'dotenv';
 import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js';
 import logger from './utils/logger.js';
 import { registerGlobalErrorHandlers } from './utils/error-handler.js';
-import { z } from 'zod';
 
 // Load environment variables
 config();
@@ -29,7 +28,7 @@ const server = new McpServer({
 // Register the upload_clipboard_image tool
 server.tool(
   "upload_clipboard_image",
-  z.object({}), // empty schema - no parameters required
+  {}, // empty object for no parameters
   async () => {
     try {
       const url = await uploadCurrentClipboardImage();
