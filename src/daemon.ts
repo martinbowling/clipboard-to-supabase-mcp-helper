@@ -12,9 +12,21 @@ import logger from './utils/logger.js';
 import { AppError, asyncHandler } from './utils/error-handler.js';
 import { safeRemove } from './utils/fs.js';
 
-// Node versions older than 18 need fetch polyfill
-// Uncomment this line if you're using Node 16/17
-// import "undici/polyfill";
+// Polyfill fetch for Node.js versions < 18
+// Dynamically import to avoid issues in newer Node versions
+if (!globalThis.fetch) {
+  try {
+    logger.info('Node.js version < 18 detected, applying fetch polyfill');
+    import('undici').then(undici => {
+      globalThis.fetch = undici.fetch;
+      logger.info('Fetch polyfill applied successfully');
+    }).catch(err => {
+      logger.error(`Failed to load undici polyfill: ${err.message}`);
+    });
+  } catch (err) {
+    logger.error(`Error checking fetch availability: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
 
 // Load environment variables
 config();
@@ -44,26 +56,33 @@ function getImageHash(data: Buffer): string {
 
 /**
  * Uploads a file to Supabase and returns its public URL
+ * Uses ArrayBuffer conversion to avoid Undici EPIPE issues with large files
  */
 async function uploadFileToSupabase(buffer: Buffer, filePath: string): Promise<string> {
-  // Reject absurdly large clips early (saves token+bandwidth)
+  // Reject large images early
   if (buffer.byteLength > MAX_IMAGE_SIZE) {
     throw new AppError(`Image too large (${Math.round(buffer.byteLength / 1024 / 1024)}MB > 8MB)`, 'IMAGE_TOO_LARGE');
   }
 
-  // Convert Buffer to ArrayBuffer to avoid Undici EPIPE issues
+  // Important: Convert Buffer to ArrayBuffer using buffer.buffer
+  // This prevents Undici EPIPE errors with large payloads
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(filePath, new Uint8Array(buffer).buffer, {
+    .upload(filePath, buffer.buffer, {
       contentType: 'image/png',
       upsert: true
     });
 
   if (error) {
-    throw new AppError(`Supabase upload failed: ${error.message}`, 'UPLOAD_ERROR');
+    // Add more context for debugging
+    const errorDetails = error.message ? 
+      `${error.message} (Code: ${error.code || 'unknown'})` : 
+      'Unknown Supabase error';
+    
+    throw new AppError(`Supabase upload failed: ${errorDetails}`, 'UPLOAD_ERROR');
   }
 
-  // Get public URL
+  // Get public URL (or use signedURL if needed)
   const { data: urlData } = supabase.storage
     .from(BUCKET)
     .getPublicUrl(filePath);
@@ -100,6 +119,9 @@ const handleImage = asyncHandler(async (): Promise<void> => {
         logger.debug('Empty image file detected, skipping');
         return;
       }
+      
+      // Log image size for debugging
+      logger.debug(`Image size: ${Math.round(stats.size / 1024)}KB`);
     } catch (err) {
       logger.debug('Image file not found or inaccessible');
       return;
@@ -140,7 +162,7 @@ const handleImage = asyncHandler(async (): Promise<void> => {
       'CLIPBOARD_PROCESSING_ERROR'
     );
   } finally {
-    // Safely clean up temp file
+    // Safely clean up temp file (ignores ENOENT errors)
     await safeRemove(filename);
   }
 });
@@ -160,6 +182,16 @@ export function startClipboardListener(): void {
     logger.error('Missing Supabase configuration. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
     process.exit(1);
   }
+  
+  // Verify Supabase connection
+  logger.info('Verifying Supabase connection...');
+  supabase.storage.getBucket(BUCKET)
+    .then(() => {
+      logger.info(`Connected to Supabase bucket: ${BUCKET}`);
+    })
+    .catch(error => {
+      logger.error(`Failed to connect to Supabase bucket: ${error.message}. This may indicate a paused project, invalid credentials, or network issues.`);
+    });
   
   // Start polling clipboard with interval
   if (clipboardWatcherInterval) {
@@ -198,6 +230,9 @@ export const uploadCurrentClipboardImage = asyncHandler(async (): Promise<string
         logger.debug('Empty image file detected');
         return 'No valid image in clipboard';
       }
+      
+      // Log image size for debugging
+      logger.debug(`Image size: ${Math.round(stats.size / 1024)}KB`);
     } catch (err) {
       logger.debug('Image file not found or inaccessible');
       return 'Failed to capture clipboard image';
@@ -224,7 +259,7 @@ export const uploadCurrentClipboardImage = asyncHandler(async (): Promise<string
     
     return `Error: ${error instanceof AppError ? error.message : 'Upload failed'}`;
   } finally {
-    // Safely clean up temp file
+    // Safely clean up temp file (ignores ENOENT errors)
     await safeRemove(filename);
   }
 });

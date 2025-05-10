@@ -12,9 +12,9 @@ This error typically occurs when the Supabase upload fails. Here are potential c
 
 **Issue**: You're using Node.js 16 or 17 without the fetch polyfill enabled.
 
-**Solution**: Either:
-- Upgrade to Node.js 18+ (recommended)
-- Uncomment the `import "undici/polyfill";` line in `src/daemon.ts`
+**Solution**: 
+- The helper now automatically tries to apply the Undici polyfill for Node.js < 18
+- For best results, use Node.js 18 or newer
 
 #### 2. Supabase Project Issues
 
@@ -24,6 +24,18 @@ This error typically occurs when the Supabase upload fails. Here are potential c
 - **Free Tier Sleep**: Your Supabase project may be in sleep mode. Wake it by visiting the dashboard.
 - **Project Paused**: Check if your project is paused in the Supabase dashboard.
 - **Credentials**: Verify your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are correct.
+- **Connection Check**: The helper now checks the Supabase connection at startup and logs the result.
+
+**Debugging**:
+```bash
+# To see the full error details:
+LOG_LEVEL=DEBUG npm start
+
+# If you see "Failed to connect to Supabase bucket" in the logs, your project may be:
+# - Paused (visit Supabase dashboard to unpause)
+# - Have incorrect credentials in .env
+# - Be experiencing connectivity issues
+```
 
 #### 3. Large Images
 
@@ -52,16 +64,31 @@ This error typically occurs when the Supabase upload fails. Here are potential c
 - **Windows**: Try taking a new screenshot
 - **Linux**: Make sure xclip or wl-paste is installed depending on your display server
 
-### Additional Debugging
+### Empty Image Files
+
+**Issue**: Sometimes clipboard tools capture empty files when the clipboard doesn't contain a valid image format.
+
+**Solution**: The helper now checks file existence and size before attempting uploads, so this should no longer cause issues.
+
+### Buffer to ArrayBuffer Conversion
+
+**Issue**: Supabase can throw EPIPE errors when uploading large files due to a known Undici issue.
+
+**Solution**: The helper now properly converts Node Buffers to ArrayBuffers using the `buffer.buffer` property to avoid this issue.
+
+## Additional Debugging
 
 For more detailed debugging information, you can set environment variables:
 
 ```bash
-# Enable Undici debug logs
-DEBUG=* npm run start
-
-# Enable application debugging
+# Enable DEBUG logging
 LOG_LEVEL=DEBUG npm run start
+
+# Enable Undici debug logs (for Supabase network issues)
+DEBUG=undici:* npm run start
+
+# Check Supabase bucket connection
+node -e "require('dotenv').config(); const { createClient } = require('@supabase/supabase-js'); const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY); supabase.storage.getBucket(process.env.BUCKET || 'media').then(r => console.log('Supabase connected!', r)).catch(e => console.error('Supabase error:', e))"
 ```
 
 ## Testing Your Setup
@@ -86,6 +113,7 @@ If these tests pass but the helper still isn't working, please open an issue wit
 
 - **Issue**: pngpaste not working
 - **Solution**: Run `brew reinstall pngpaste` and ensure it's in your PATH
+- **Version**: Use pngpaste >= 2.0 for proper error handling (`brew upgrade pngpaste`)
 
 ### Windows
 
