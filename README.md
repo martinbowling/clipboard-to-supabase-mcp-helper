@@ -9,6 +9,7 @@ A local agent that monitors the system clipboard, uploads any copied image to Su
 - Cross-platform: Works on macOS, Windows, and Linux
 - MCP integration: Expose clipboard image upload as an MCP endpoint
 - Auto-start: Configure to run at system startup
+- Efficient detection: Hash-based deduplication with low CPU usage
 
 ## Prerequisites
 
@@ -69,7 +70,7 @@ npm run install:windows
 
 Once installed and running, the helper will:
 
-1. Monitor your clipboard for image changes
+1. Monitor your clipboard for image changes (polling every 300ms)
 2. Upload any copied images to your Supabase bucket
 3. Place the public URL back in your clipboard, ready to paste
 
@@ -87,9 +88,22 @@ The helper exposes an MCP endpoint on port 3333 (configurable):
 Response:
 ```json
 {
-  "content": "https://your-project.supabase.co/storage/v1/object/public/media/clips/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.png"
+  "content": [
+    {
+      "type": "text",
+      "text": "https://your-project.supabase.co/storage/v1/object/public/media/clips/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.png"
+    }
+  ]
 }
 ```
+
+## How It Works
+
+1. **Change Detection**: Polls clipboard every 300ms and computes SHA-1 hash of image data
+2. **Deduplication**: Only processes new or changed images based on hash comparison
+3. **Platform Adaptation**: Uses platform-specific methods to capture clipboard images
+4. **Supabase Integration**: Uploads images to your Supabase bucket with unique UUIDs
+5. **MCP Endpoint**: Exposes functionality to AI agents via Model Context Protocol
 
 ## Platform-Specific Notes
 

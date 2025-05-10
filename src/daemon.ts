@@ -1,12 +1,11 @@
-import clipboardListener from 'clipboard-event';
 import clipboardy from 'clipboardy';
 import { createClient } from '@supabase/supabase-js';
 import { tmpdir } from 'os';
 import fs from 'fs/promises';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
-import debounce from 'lodash.debounce';
 import { config } from 'dotenv';
+import { createHash } from 'crypto';
 import { getImageFromClipboard, isPlatformSupported, getPlatformName } from './platforms/index.js';
 import logger from './utils/logger.js';
 import { AppError, asyncHandler } from './utils/error-handler.js';
@@ -23,6 +22,18 @@ const supabase = createClient(
 // Constants
 const TMP = tmpdir();
 const BUCKET = process.env.BUCKET || 'media';
+const POLL_INTERVAL_MS = 300; // 300ms polling interval
+
+// Store the hash of the last processed image to avoid duplicates
+let lastImageHash = '';
+let clipboardWatcherInterval: NodeJS.Timeout | null = null;
+
+/**
+ * Computes SHA-1 hash of a buffer for change detection
+ */
+function getImageHash(data: Buffer): string {
+  return createHash('sha1').update(data).digest('hex');
+}
 
 /**
  * Handles clipboard image detection and upload to Supabase
@@ -46,10 +57,22 @@ const handleImage = asyncHandler(async (): Promise<void> => {
       return; // Not an image, exit early
     }
     
-    logger.info('Image found in clipboard, preparing to upload');
-    
     // Read image file
     const data = await fs.readFile(filename);
+    
+    // Calculate hash for change detection
+    const imageHash = getImageHash(data);
+    
+    // Skip if this is the same image as before
+    if (imageHash === lastImageHash) {
+      logger.debug('Duplicate image detected, skipping upload');
+      return;
+    }
+    
+    // Update the last image hash
+    lastImageHash = imageHash;
+    
+    logger.info('New image found in clipboard, preparing to upload');
     
     // Create unique path for Supabase
     const filePath = `clips/${path.basename(filename)}`;
@@ -89,7 +112,7 @@ const handleImage = asyncHandler(async (): Promise<void> => {
 });
 
 /**
- * Initialize clipboard listener with debounce
+ * Initialize clipboard polling
  */
 export function startClipboardListener(): void {
   // Check if platform is supported
@@ -104,11 +127,14 @@ export function startClipboardListener(): void {
     process.exit(1);
   }
   
-  // Start listening for clipboard changes with 250ms debounce
-  clipboardListener.startListening();
-  clipboardListener.on('change', debounce(handleImage, 250));
+  // Start polling clipboard with interval
+  if (clipboardWatcherInterval) {
+    clearInterval(clipboardWatcherInterval);
+  }
   
-  logger.info(`Clipboard listener started on ${getPlatformName()} - watching for images`);
+  clipboardWatcherInterval = setInterval(handleImage, POLL_INTERVAL_MS);
+  
+  logger.info(`Clipboard polling started on ${getPlatformName()} (${POLL_INTERVAL_MS}ms interval) - watching for images`);
 }
 
 /**
