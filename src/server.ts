@@ -1,8 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/http.js';
 import { config } from 'dotenv';
 import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js';
 import logger from './utils/logger.js';
 import { registerGlobalErrorHandlers } from './utils/error-handler.js';
+import { z } from 'zod';
 
 // Load environment variables
 config();
@@ -18,27 +20,51 @@ try {
   process.exit(1);
 }
 
-// Initialize MCP server
-const mcp = new McpServer({ 
-  port: parseInt(process.env.MCP_PORT || '3333', 10)
+// Initialize MCP server with metadata
+const server = new McpServer({
+  name: "clipboard-helper",
+  version: "0.1.0"
 });
 
 // Register the upload_clipboard_image tool
-mcp.registerTool('upload_clipboard_image', {
-  description: 'Uploads current clipboard image to Supabase and returns the URL.',
-  invoke: async () => {
+server.tool(
+  "upload_clipboard_image",
+  z.object({}), // empty schema - no parameters required
+  async () => {
     try {
-      return await uploadCurrentClipboardImage();
+      const url = await uploadCurrentClipboardImage();
+      logger.info(`MCP tool called: upload_clipboard_image → ${url}`);
+      return {
+        content: [
+          { type: "text", text: url }
+        ]
+      };
     } catch (error) {
-      logger.error(`MCP tool error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      return `Error: Failed to upload image`;
+      const errorMessage = `Error uploading clipboard image: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      logger.error(errorMessage);
+      return {
+        content: [
+          { type: "text", text: `Error: Failed to upload image` }
+        ]
+      };
     }
   }
-});
+);
 
-// Start the MCP server
-mcp.listen();
-logger.info(`MCP Clipboard Helper listening on port ${process.env.MCP_PORT || 3333}`);
+// Start the MCP server with HTTP transport
+const port = parseInt(process.env.MCP_PORT || '3333', 10);
+const transport = new StreamableHTTPServerTransport({ port });
+
+// Connect the server to the transport
+(async () => {
+  try {
+    await server.connect(transport);
+    logger.info(`MCP Clipboard Helper listening on port ${port}`);
+  } catch (error) {
+    logger.error(`Failed to start MCP server: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    process.exit(1);
+  }
+})();
 
 // Handle graceful shutdown
 process.on('SIGINT', () => {
