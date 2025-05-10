@@ -40,7 +40,7 @@ export async function getImageFromClipboard(filePath: string): Promise<boolean> 
     try {
       execFileSync('pngpaste', [filePath]);
     } catch (execError) {
-      logger.debug(`pngpaste execution failed: ${execError.message}`);
+      logger.debug(`pngpaste execution failed: ${execError instanceof Error ? execError.message : 'Unknown error'}`);
       return false;
     }
     
@@ -59,12 +59,12 @@ export async function getImageFromClipboard(filePath: string): Promise<boolean> 
         logger.debug('pngpaste created an empty file - clipboard likely does not contain a PNG image');
         return false;
       }
-      
+
       // Success! Log the file size for debugging
       logger.debug(`Image captured successfully: ${Math.round(stats.size / 1024)} KB`);
       return true;
     } catch (statErr) {
-      logger.debug(`Failed to stat file after pngpaste: ${statErr.message}`);
+      logger.debug(`Failed to stat file after pngpaste: ${statErr instanceof Error ? statErr.message : 'Unknown error'}`);
       return false;
     }
   } catch (error) {

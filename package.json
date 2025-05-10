@@ -12,7 +12,8 @@
     "dev:http": "tsc-watch --onSuccess \"node dist/server-http.js\"",
     "install:macos": "node scripts/install-macos.js",
     "install:linux": "node scripts/install-linux.js",
-    "install:windows": "node scripts/install-windows.js"
+    "install:windows": "node scripts/install-windows.js",
+    "test:supabase": "node scripts/test-supabase.js"
   },
   "keywords": [
     "clipboard",

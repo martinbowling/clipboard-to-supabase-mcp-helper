@@ -6,6 +6,7 @@ import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js
 import logger from './utils/logger.js';
 import { registerGlobalErrorHandlers } from './utils/error-handler.js';
 import { randomUUID } from 'crypto';
+import { cleanupOldFiles } from './utils/cleanup.js';
 
 // Load environment variables
 config();
@@ -46,6 +47,47 @@ server.tool(
       return {
         content: [
           { type: "text", text: `Error: Failed to upload image` }
+        ]
+      };
+    }
+  }
+);
+
+// Register the cleanup_old_files tool
+server.tool(
+  "cleanup_old_files",
+  {
+    type: "object",
+    properties: {
+      days: {
+        type: "integer",
+        description: "Number of days to keep files"
+      }
+    }
+  },
+  async ({ days }) => {
+    try {
+      // Use the configured retention period if no days parameter provided
+      const retentionDays = days || parseInt(process.env.RETENTION_DAYS || '30', 10);
+
+      logger.info(`MCP tool called: cleanup_old_files with retention period of ${retentionDays} days`);
+
+      const result = await cleanupOldFiles(retentionDays);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Cleanup completed: Deleted ${result.success} files older than ${retentionDays} days. Failed: ${result.errors}.`
+          }
+        ]
+      };
+    } catch (error) {
+      const errorMessage = `Error cleaning up old files: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      logger.error(errorMessage);
+      return {
+        content: [
+          { type: "text", text: `Error: Failed to cleanup old files` }
         ]
       };
     }

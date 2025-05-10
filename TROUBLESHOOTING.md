@@ -2,21 +2,41 @@
 
 This guide helps resolve common issues you might encounter when running the Clipboard to Supabase MCP Helper.
 
+## Quick Setup Checklist
+
+1. Node.js 18+ is installed (`node -v`)
+2. Required platform dependencies:
+   - macOS: pngpaste (`brew install pngpaste`)
+   - Linux: xclip or wl-clipboard
+   - Windows: PowerShell with appropriate execution policy
+3. Supabase project is active (not paused) and storage bucket exists
+4. Environment variables are correctly set in `.env` file
+5. System service is properly installed for auto-start
+
+## Node.js Version Requirement
+
+This application requires Node.js 18 or later, as it uses native features like:
+- The Fetch API
+- Modern ECMAScript modules
+- Enhanced performance and stability
+
+If you see an error on startup about Node.js version, please update:
+
+```bash
+# Using nvm (recommended)
+nvm install 18    # or higher version
+nvm use 18
+
+# Or download directly from nodejs.org
+```
+
 ## Common Issues
 
 ### "fetch failed" or "CLIPBOARD_PROCESSING_ERROR"
 
 This error typically occurs when the Supabase upload fails. Here are potential causes and solutions:
 
-#### 1. Node.js Version
-
-**Issue**: You're using Node.js 16 or 17 without the fetch polyfill enabled.
-
-**Solution**: 
-- The helper now automatically tries to apply the Undici polyfill for Node.js < 18
-- For best results, use Node.js 18 or newer
-
-#### 2. Supabase Project Issues
+#### 1. Supabase Project Issues
 
 **Issue**: Supabase service problems.
 
@@ -25,6 +45,12 @@ This error typically occurs when the Supabase upload fails. Here are potential c
 - **Project Paused**: Check if your project is paused in the Supabase dashboard.
 - **Credentials**: Verify your `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are correct.
 - **Connection Check**: The helper now checks the Supabase connection at startup and logs the result.
+- **"fetch failed" Error**: This common error typically means:
+  - Your Supabase project is paused or in sleep mode
+  - There's a network connectivity issue preventing connections
+  - Your credentials (URL or API key) are incorrect
+  - A firewall is blocking access to Supabase
+  - Supabase may be experiencing an outage
 
 **Debugging**:
 ```bash
@@ -37,13 +63,13 @@ LOG_LEVEL=DEBUG npm start
 # - Be experiencing connectivity issues
 ```
 
-#### 3. Large Images
+#### 2. Large Images
 
 **Issue**: Very large images (>8MB) are rejected.
 
 **Solution**: The tool automatically rejects images larger than 8MB. Try with smaller images, or edit the `MAX_IMAGE_SIZE` constant in the code if needed.
 
-#### 4. Network Issues
+#### 3. Network Issues
 
 **Issue**: Network problems preventing uploads.
 
@@ -70,11 +96,15 @@ LOG_LEVEL=DEBUG npm start
 
 **Solution**: The helper now checks file existence and size before attempting uploads, so this should no longer cause issues.
 
-### Buffer to ArrayBuffer Conversion
+### ENOENT (File Not Found) Errors
 
-**Issue**: Supabase can throw EPIPE errors when uploading large files due to a known Undici issue.
+**Issue**: Temporary files not being properly created or read.
 
-**Solution**: The helper now properly converts Node Buffers to ArrayBuffers using the `buffer.buffer` property to avoid this issue.
+**Solutions**:
+- The application now includes multiple checks for file existence
+- Directory verification is performed before file operations
+- A small delay is added after file creation to ensure filesystem completion
+- Multiple fallbacks are implemented for different upload methods
 
 ## Additional Debugging
 
@@ -84,16 +114,33 @@ For more detailed debugging information, you can set environment variables:
 # Enable DEBUG logging
 LOG_LEVEL=DEBUG npm run start
 
-# Enable Undici debug logs (for Supabase network issues)
-DEBUG=undici:* npm run start
-
 # Check Supabase bucket connection
 node -e "require('dotenv').config(); const { createClient } = require('@supabase/supabase-js'); const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY); supabase.storage.getBucket(process.env.BUCKET || 'media').then(r => console.log('Supabase connected!', r)).catch(e => console.error('Supabase error:', e))"
 ```
 
 ## Testing Your Setup
 
-To quickly test if your setup is working correctly:
+### Quick Supabase Connection Test
+
+We've included a comprehensive test script to verify your Supabase setup:
+
+```bash
+# Run the Supabase connection test
+npm run test:supabase
+```
+
+The test script will:
+1. Verify environment variables are correctly set
+2. Check if the bucket exists
+3. Test uploading a small file
+4. Test downloading the file
+5. Test generating a public URL
+6. Test listing files
+7. Clean up the test file
+
+### Manual Tests
+
+You can also perform these simple manual tests:
 
 ```bash
 # 1. Take a screenshot or copy an image to clipboard
@@ -101,7 +148,7 @@ To quickly test if your setup is working correctly:
 # 2. Run this command to test image capture
 node -e "const { execSync } = require('child_process'); const p = '/tmp/test.png'; try { execSync('pngpaste ' + p); console.log('Image captured successfully!'); } catch(e) { console.error('Failed to capture image:', e.message); }"
 
-# 3. Test Supabase connection (replace with your credentials)
+# 3. Test Supabase connection
 node -e "const { createClient } = require('@supabase/supabase-js'); const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY); supabase.storage.getBucket('media').then(r => console.log('Supabase connected!', r)).catch(e => console.error('Supabase error:', e))"
 ```
 
@@ -126,3 +173,30 @@ If these tests pass but the helper still isn't working, please open an issue wit
 - **Solution**: The helper tries multiple methods, but you may need to install the appropriate package:
   - For X11: `sudo apt install xclip`
   - For Wayland: `sudo apt install wl-clipboard`
+
+## Automatic Cleanup Issues
+
+### "Storage Bucket Size Keeps Growing"
+
+**Issue**: Automatic cleanup isn't working properly
+
+**Solutions**:
+- Check if `RETENTION_DAYS` is set in your `.env` file (default is 30 days)
+- Set `LOG_LEVEL=DEBUG` to see detailed logs about cleanup operations
+- Verify the Supabase service role key has sufficient permissions
+- Trigger a manual cleanup using the MCP endpoint to test functionality:
+
+```bash
+# HTTP mode - from command line
+curl -X POST http://localhost:3333/mcp -H "Content-Type: application/json" -d '{"id":"1","jsonrpc":"2.0","method":"tool","params":{"name":"cleanup_old_files","input":{"days":30}}}'
+```
+
+### Cleanup Not Deleting Expected Files
+
+**Issue**: Files you expect to be deleted are not being removed.
+
+**Solutions**:
+- Check the file creation timestamps in Supabase dashboard
+- The cleanup uses the file's `created_at` timestamp to determine age
+- Ensure the Supabase bucket exists and is accessible
+- Verify the service role key has delete permissions for storage

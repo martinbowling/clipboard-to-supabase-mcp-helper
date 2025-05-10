@@ -24,7 +24,7 @@ A local agent that monitors the system clipboard, uploads any copied image to Su
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/clipboard-to-supabase-mcp-helper.git
+git clone https://github.com/martinbowling/clipboard-to-supabase-mcp-helper.git
 cd clipboard-to-supabase-mcp-helper
 ```
 
@@ -43,13 +43,19 @@ BUCKET=media
 MCP_PORT=3333
 ```
 
-4. Build the project:
+4. Test your Supabase connection:
+
+```bash
+npm run test:supabase
+```
+
+5. Build the project:
 
 ```bash
 npm run build
 ```
 
-5. Install as a system service:
+6. Install as a system service:
 
 For macOS:
 ```bash
@@ -92,7 +98,9 @@ This runs an Express HTTP server on port 3333 (configurable) with a proper REST 
 
 ### MCP Integration
 
-The helper exposes an MCP endpoint:
+The helper exposes the following MCP endpoints:
+
+#### Upload Clipboard Image
 
 With HTTP server mode:
 ```
@@ -128,6 +136,43 @@ Response:
 }
 ```
 
+#### Cleanup Old Files
+
+The helper also provides an MCP endpoint to manually trigger cleanup of old files.
+
+Request body:
+```json
+{
+  "id": "1",
+  "jsonrpc": "2.0",
+  "method": "tool",
+  "params": {
+    "name": "cleanup_old_files",
+    "input": {
+      "days": 30
+    }
+  }
+}
+```
+
+Response:
+```json
+{
+  "id": "1",
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Cleanup completed: Deleted 5 files older than 30 days. Failed: 0."
+      }
+    ]
+  }
+}
+```
+
+The `days` parameter is optional. If not provided, it will use the value from the `RETENTION_DAYS` environment variable.
+
 ## How It Works
 
 1. **Change Detection**: Polls clipboard every 300ms and computes SHA-1 hash of image data
@@ -135,6 +180,7 @@ Response:
 3. **Platform Adaptation**: Uses platform-specific methods to capture clipboard images
 4. **Supabase Integration**: Uploads images to your Supabase bucket with unique UUIDs
 5. **MCP Endpoint**: Exposes functionality to AI agents via Model Context Protocol
+6. **Automatic Cleanup**: Periodically removes images older than the configured retention period (default: 30 days)
 
 ## Platform-Specific Notes
 

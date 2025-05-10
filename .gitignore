@@ -19,6 +19,7 @@ npm-debug.log*
 Thumbs.db
 
 # Editor directories and files
+.claude
 .idea
 .vscode
 *.suo

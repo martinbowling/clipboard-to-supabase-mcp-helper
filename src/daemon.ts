@@ -2,7 +2,7 @@ import clipboardy from 'clipboardy';
 import { createClient } from '@supabase/supabase-js';
 import { tmpdir } from 'os';
 import fs from 'fs/promises';
-import { statSync } from 'fs';
+import { statSync, existsSync } from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { config } from 'dotenv';
@@ -11,25 +11,17 @@ import { getImageFromClipboard, isPlatformSupported, getPlatformName } from './p
 import logger from './utils/logger.js';
 import { AppError, asyncHandler } from './utils/error-handler.js';
 import { safeRemove } from './utils/fs.js';
+import { scheduleCleanup } from './utils/cleanup.js';
 
 // Load environment variables first
 config();
 
-// Polyfill fetch for Node.js versions < 18
-if (!globalThis.fetch) {
-  try {
-    logger.info('Node.js version < 18 detected, applying fetch polyfill');
-    // Import synchronously to ensure fetch is available
-    const undici = require('undici');
-    globalThis.fetch = undici.fetch;
-    globalThis.Request = undici.Request;
-    globalThis.Response = undici.Response;
-    globalThis.Headers = undici.Headers;
-    logger.info('Fetch polyfill applied successfully');
-  } catch (err) {
-    logger.error(`Failed to load undici polyfill: ${err instanceof Error ? err.message : String(err)}`);
-    throw new Error('Failed to initialize fetch polyfill. Please use Node.js 18+ or ensure undici is installed.');
-  }
+// Check Node.js version
+const nodeVersion = process.versions.node;
+const majorVersion = parseInt(nodeVersion.split('.')[0], 10);
+if (majorVersion < 18) {
+  logger.error(`Node.js version ${nodeVersion} is not supported. Please use Node.js 18 or later.`);
+  process.exit(1);
 }
 
 // Create Supabase client
@@ -135,7 +127,7 @@ async function uploadFileToSupabase(buffer: Buffer, filePath: string): Promise<s
     
     // All attempts failed, throw detailed error
     throw new AppError(
-      `Supabase upload failed after 3 attempts. Last error: ${error3.message || 'Unknown error'} (Code: ${error3.code || 'unknown'})`,
+      `Supabase upload failed after 3 attempts. Last error: ${error3.message || 'Unknown error'}`,
       'UPLOAD_ERROR'
     );
   } catch (err) {
@@ -162,6 +154,13 @@ const handleImage = asyncHandler(async (): Promise<void> => {
     // Check if platform is supported
     if (!isPlatformSupported()) {
       logger.error(`Unsupported platform: ${getPlatformName()}`);
+      return;
+    }
+    
+    // Make sure temp directory exists
+    const tempDir = path.dirname(filename);
+    if (!existsSync(tempDir)) {
+      logger.error(`Temp directory does not exist: ${tempDir}`);
       return;
     }
     
@@ -264,8 +263,11 @@ export function startClipboardListener(): void {
   }
   
   clipboardWatcherInterval = setInterval(handleImage, POLL_INTERVAL_MS);
-  
+
   logger.info(`Clipboard polling started on ${getPlatformName()} (${POLL_INTERVAL_MS}ms interval) - watching for images`);
+
+  // Schedule automatic cleanup of old files based on retention policy
+  scheduleCleanup();
 }
 
 /**

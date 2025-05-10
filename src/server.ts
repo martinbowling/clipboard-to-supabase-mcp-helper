@@ -1,9 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { config } from 'dotenv';
 import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js';
 import logger from './utils/logger.js';
 import { registerGlobalErrorHandlers } from './utils/error-handler.js';
+import { cleanupOldFiles } from './utils/cleanup.js';
 
 // Load environment variables
 config();
@@ -50,15 +51,55 @@ server.tool(
   }
 );
 
-// Start the MCP server with HTTP transport
-const port = parseInt(process.env.MCP_PORT || '3333', 10);
-const transport = new StreamableHTTPServerTransport({ port });
+// Register the cleanup_old_files tool
+server.tool(
+  "cleanup_old_files",
+  {
+    type: "object",
+    properties: {
+      days: {
+        type: "integer",
+        description: "Number of days to keep files"
+      }
+    }
+  },
+  async ({ days }) => {
+    try {
+      // Use the configured retention period if no days parameter provided
+      const retentionDays = days || parseInt(process.env.RETENTION_DAYS || '30', 10);
+
+      logger.info(`MCP tool called: cleanup_old_files with retention period of ${retentionDays} days`);
+
+      const result = await cleanupOldFiles(retentionDays);
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Cleanup completed: Deleted ${result.success} files older than ${retentionDays} days. Failed: ${result.errors}.`
+          }
+        ]
+      };
+    } catch (error) {
+      const errorMessage = `Error cleaning up old files: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      logger.error(errorMessage);
+      return {
+        content: [
+          { type: "text", text: `Error: Failed to cleanup old files` }
+        ]
+      };
+    }
+  }
+);
+
+// Start the MCP server with StdioServerTransport
+const transport = new StdioServerTransport();
 
 // Connect the server to the transport
 (async () => {
   try {
     await server.connect(transport);
-    logger.info(`MCP Clipboard Helper listening on port ${port}`);
+    logger.info(`MCP Clipboard Helper ready (stdio)`);
   } catch (error) {
     logger.error(`Failed to start MCP server: ${error instanceof Error ? error.message : 'Unknown error'}`);
     process.exit(1);
