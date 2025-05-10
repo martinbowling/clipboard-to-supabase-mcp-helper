@@ -1,4 +1,4 @@
-import { MCPServer } from '@modelcontextprotocol/sdk';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { config } from 'dotenv';
 import { startClipboardListener, uploadCurrentClipboardImage } from './daemon.js';
 import logger from './utils/logger.js';
@@ -19,7 +19,7 @@ try {
 }
 
 // Initialize MCP server
-const mcp = new MCPServer({ 
+const mcp = new McpServer({ 
   port: parseInt(process.env.MCP_PORT || '3333', 10)
 });
 
