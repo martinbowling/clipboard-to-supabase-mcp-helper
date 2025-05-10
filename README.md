@@ -17,7 +17,7 @@ A local agent that monitors the system clipboard, uploads any copied image to Su
 - Supabase account with Storage enabled
 - Platform-specific dependencies:
   - macOS: `pngpaste` (`brew install pngpaste`)
-  - Windows/Linux: `img-clipboard` (will be installed via npm)
+  - Windows/Linux: Native OS clipboard access
 
 ## Installation
 
@@ -74,26 +74,57 @@ Once installed and running, the helper will:
 2. Upload any copied images to your Supabase bucket
 3. Place the public URL back in your clipboard, ready to paste
 
+### Running the Service
+
+The clipboard helper can be run in two modes:
+
+#### Stdio Mode (Default)
+```bash
+npm start
+```
+This runs the MCP server with StdioServerTransport, ideal for command-line usage.
+
+#### HTTP Mode
+```bash
+npm run start:http
+```
+This runs an Express HTTP server on port 3333 (configurable) with a proper REST API endpoint.
+
 ### MCP Integration
 
-The helper exposes an MCP endpoint on port 3333 (configurable):
+The helper exposes an MCP endpoint:
 
+With HTTP server mode:
+```
+POST http://localhost:3333/mcp
+```
+
+Request body:
 ```json
 {
-  "tool_name": "upload_clipboard_image",
-  "input": {}
+  "id": "1",
+  "jsonrpc": "2.0",
+  "method": "tool",
+  "params": {
+    "name": "upload_clipboard_image",
+    "input": {}
+  }
 }
 ```
 
 Response:
 ```json
 {
-  "content": [
-    {
-      "type": "text",
-      "text": "https://your-project.supabase.co/storage/v1/object/public/media/clips/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.png"
-    }
-  ]
+  "id": "1",
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "https://your-project.supabase.co/storage/v1/object/public/media/clips/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.png"
+      }
+    ]
+  }
 }
 ```
 
@@ -112,30 +143,30 @@ Response:
 - Uses LaunchAgents for auto-start
 
 ### Windows
+- Uses PowerShell's System.Windows.Forms.Clipboard for image capture
 - Uses Windows Registry for auto-start
-- Requires Node.js to be in PATH
 
 ### Linux
+- Uses xclip (X11) or wl-paste (Wayland) for clipboard access
 - Uses systemd for auto-start
-- May require xclip or wl-clipboard depending on your display server
-
-## Supabase Configuration
-
-1. Create a bucket named `media` (or your choice, update in `.env`)
-2. Set public access or use signed URLs 
-3. Optional: Configure lifecycle rules to delete old images
 
 ## Development
 
 ```bash
-# Run with live reload
+# Run with live reload (stdio mode)
 npm run dev
+
+# Run with live reload (HTTP mode)
+npm run dev:http
 
 # Build for production
 npm run build
 
-# Run built version
+# Run stdio version
 npm start
+
+# Run HTTP version
+npm run start:http
 ```
 
 ## License
