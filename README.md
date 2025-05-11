@@ -2,6 +2,10 @@
 
 A local agent that monitors the system clipboard, uploads any copied image to Supabase Storage, then writes the public (or signed) URL back to the clipboard.
 
+<a href="https://glama.ai/mcp/servers/@martinbowling/clipboard-to-supabase-mcp-helper">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@martinbowling/clipboard-to-supabase-mcp-helper/badge" alt="Clipboard to Supabase Helper MCP server" />
+</a>
+
 ## Features
 
 - Zero-click image hosting: Copy an image, get a URL instantly
