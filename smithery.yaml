@@ -1,0 +1,50 @@
+# Smithery configuration file: https://smithery.ai/docs/build/project-config
+
+startCommand:
+  type: stdio
+  configSchema:
+    # JSON Schema defining the configuration options for the MCP.
+    type: object
+    required:
+      - supabaseUrl
+      - supabaseServiceRoleKey
+      - bucket
+    properties:
+      supabaseUrl:
+        type: string
+        description: Supabase project URL (e.g. https://<project>.supabase.co)
+      supabaseServiceRoleKey:
+        type: string
+        description: Supabase service role key
+      bucket:
+        type: string
+        description: Supabase Storage bucket name
+      mcpPort:
+        type: number
+        default: 3333
+        description: Port for HTTP mode (unused for stdio mode)
+      retentionDays:
+        type: number
+        default: 30
+        description: Number of days to retain files
+    description: Configuration for Clipboard to Supabase MCP Helper
+  commandFunction:
+    # A JS function that produces the CLI command based on the given config to start the MCP on stdio.
+    |-
+    (config) => ({
+      command: 'node',
+      args: ['dist/server.js'],
+      env: {
+        SUPABASE_URL: config.supabaseUrl,
+        SUPABASE_SERVICE_ROLE_KEY: config.supabaseServiceRoleKey,
+        BUCKET: config.bucket,
+        MCP_PORT: config.mcpPort?.toString() || '3333',
+        RETENTION_DAYS: config.retentionDays?.toString() || '30'
+      }
+    })
+  exampleConfig:
+    supabaseUrl: https://example.supabase.co
+    supabaseServiceRoleKey: eyJh...xyz
+    bucket: media
+    mcpPort: 3333
+    retentionDays: 30
