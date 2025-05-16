@@ -1,4 +1,5 @@
 # Clipboard to Supabase MCP Helper
+[![smithery badge](https://smithery.ai/badge/@martinbowling/clipboard-to-supabase-mcp-helper)](https://smithery.ai/server/@martinbowling/clipboard-to-supabase-mcp-helper)
 
 A local agent that monitors the system clipboard, uploads any copied image to Supabase Storage, then writes the public (or signed) URL back to the clipboard.
 
@@ -21,6 +22,15 @@ A local agent that monitors the system clipboard, uploads any copied image to Su
 
 ## Installation
 
+### Installing via Smithery
+
+To install Clipboard Image Uploader for Claude Desktop automatically via [Smithery](https://smithery.ai/server/@martinbowling/clipboard-to-supabase-mcp-helper):
+
+```bash
+npx -y @smithery/cli install @martinbowling/clipboard-to-supabase-mcp-helper --client claude
+```
+
+### Manual Installation
 1. Clone the repository:
 
 ```bash
