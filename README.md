@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/martinbowling-clipboard-to-supabase-mcp-helper-badge.png)](https://mseep.ai/app/martinbowling-clipboard-to-supabase-mcp-helper)
+
 # Clipboard to Supabase MCP Helper
 
 A local agent that monitors the system clipboard, uploads any copied image to Supabase Storage, then writes the public (or signed) URL back to the clipboard.
